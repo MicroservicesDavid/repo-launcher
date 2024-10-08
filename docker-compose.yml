@@ -1,0 +1,57 @@
+version: "3.8"
+
+services:
+  nats-server:
+    image: nats:latest
+    ports:
+      - "8222:8222"
+
+  client-gateway:
+    build:
+      context: ./client-gateway
+      dockerfile: Dockerfile
+    ports:
+      - "${CLIENT_GATEWAY_PORT}:3000"
+    environment:
+      - NATS_SERVERS=nats://nats-server:4222
+      - PORT=${CLIENT_GATEWAY_PORT}
+    depends_on:
+      - nats-server
+
+  products-ms:
+    build:
+      context: ./products-ms
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=file:./dev.db
+      - NATS_SERVERS=nats://nats-server:4222
+    depends_on:
+      - nats-server
+      - client-gateway
+
+  orders-ms:
+    depends_on:
+      - nats-server
+      - client-gateway
+      - postgres
+    build: ./orders-ms
+    command: npm run start:dev
+    environment:
+      - DATABASE_URL=postgresql://postgres:orders_password@postgres:5432/ordersdb?schema=public
+      - NATS_SERVERS=nats://nats-server:4222
+
+  postgres:
+    image: postgres:16.2
+    restart: always
+    container_name: orders_db
+    environment:
+      POSTGRES_DB: ordersdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: orders_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./orders-ms/postgres:/var/lib/postgresql/data
+
+volumes:
+  postgres:
